@@ -19,9 +19,9 @@ int main(int argc, char *argv[])
   strcpy( pdu_candidate, argv[1]);
   printf("pdu_candidate = '%s'\n", pdu_candidate);
 
-  printf("Delimiter is \" \"\n");
+  printf("Delimiter is \"\\x02\\x04\"\n");
   for (int i=0 ; i <4; i++ ) {
-    printf("%d '%s'\n", i, skip_single( &pdu_candidate, " ") );
+    printf("%d '%s'\n", i, skip_single( &pdu_candidate, "\x02\x04") );
     printf("pdu_candidate = '%s'\n", pdu_candidate);
   }
 

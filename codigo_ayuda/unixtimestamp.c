@@ -7,14 +7,14 @@
 #include <unistd.h>    /* needed for usleep() */
 #include <ctype.h>     /* needed for isprint() */
 #include <arpa/inet.h> /* needed for htonl() ,etc */
-
-
+#include <time.h>      /* needed for strftime() */
 
 #ifndef HEXDUMP_COLS
 #define HEXDUMP_COLS 16
 #endif 
 void hexdump(void *mem, unsigned int len);
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);
+void format_timestamp(struct timeval *tv, char *buffer, size_t buffer_size);
 
 int main(int argc, char *argv[])
 {
@@ -31,6 +31,10 @@ int main(int argc, char *argv[])
   printf("Size of tv_usec %lu Bytes\n", sizeof(tv1.tv_usec));
   printf("Size of timeval %lu Bytes\n", sizeof(tv1));
 
+  /* Test the new timestamp format */
+  char formatted_time[30];
+  format_timestamp(&tv1, formatted_time, sizeof(formatted_time));
+  printf("Formatted timestamp: %s\n", formatted_time);
 
   /* Particularidades de timeval_subtract */
 
@@ -89,7 +93,6 @@ int main(int argc, char *argv[])
   return 0;
 }
 
-
 /* Subtract the `struct timeval' values X and Y,
    storing the result in RESULT.
    Return 1 if the difference is negative, otherwise 0.  
@@ -123,7 +126,16 @@ int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval 
   return x->tv_sec < y->tv_sec;
 }
 
+// Function to format timestamp
+void format_timestamp(struct timeval *tv, char *buffer, size_t buffer_size)
+{
+  struct tm *tm_info;
+  time_t seconds = tv->tv_sec;
 
+  tm_info = localtime(&seconds);
+  strftime(buffer, buffer_size, "%Y-%m-%d %H:%M:%S", tm_info);
+  snprintf(buffer + strlen(buffer), buffer_size - strlen(buffer), ".%06ld", tv->tv_usec);
+}
 
 // http://grapsus.net/blog/post/Hexadecimal-dump-in-C
 void hexdump(void *mem, unsigned int len)
