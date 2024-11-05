@@ -37,13 +37,13 @@ int main(int argc, char* argv[])
 
   /* Buffer array for TCP read mockup */
   char *test_buffers[7] = {
-    "GET / HTTP/1.0\r\n\r\n",
-    "GET / HTTP/1.1\r\nHeader: value\r\n\r\n",
-    "GET / HTTP/1.0\r\nHeader\r\n\r\nPOST / HTTP/1.0\r\nHeader\r\n\r\n",
-    "GET /",
-    " HTTP/1.0\r\n\r\nPOST /",
-    " HTTP/1.1\r\n\r\n",
-    "GET / HTTP\n"
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04USER\x02TIMESTAMP\x02MESSAGE_BODY",
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY",
+    "\x04USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04"
   };
 
   /*  This for() emulates the reading loop */
@@ -131,40 +131,39 @@ int processReceivedData(char *buffer, int buffersize, int *buffer_ptr, char *pdu
     // if ( *pdu_candidate_ptr >= 3 )
     //   printf("  %d-%d-%d-%d\n", *(pdu_candidate-2), *(pdu_candidate-1), *(pdu_candidate), *buffer );
 
-    // PDU candidate criteria: \r\n\r\n (HTTP empty line)
-    if ( *pdu_candidate_ptr >= 3 && // We needed at least 3 chars to test \r\n\r\n condition
-         ( *(pdu_candidate-2) == '\r' && *(pdu_candidate-1) == '\n' &&
-           *(pdu_candidate) == '\r' && *buffer == '\n' ) )
+    // PDU candidate criteria: \x04 (MSEP)
+    if ( *pdu_candidate_ptr >= 1 && // We needed at least 1 char to test \x04 condition
+         ( *(pdu_candidate) == '\x04' ) )
     {
       pdu_candidate++; // Advance pointer for next PDU (in 2016 was not a requirement)
       *pdu_candidate++ = *buffer;
       (*pdu_candidate_ptr)++;
       #ifdef DBG_RECEIVED_DATA
-         fprintf(stderr,"CRLFCRLF detected PDU_CANDIDATE_LINE_OK\n");
+         fprintf(stderr,"MSEP detected PDU_CANDIDATE_LINE_OK\n");
       #endif
       return PDU_CANDIDATE_LINE_OK;
     }
-    else if (*buffer != '\n' &&  *pdu_candidate == '\r')
+    else if (*buffer != '\x02' &&  *pdu_candidate == '\x04')
     {
-      // Forbidden character sequence '\r' and not followed by '\n'
+      // Forbidden character sequence '\x04' and not followed by '\x02'
       // pdu_candidate_ptr must be taken care outside this function
       #ifdef DBG_RECEIVED_DATA
-         fprintf(stderr,"CR used alone without LF PDU_ERROR_BAD_FORMAT\n");
+         fprintf(stderr,"MSEP used alone without SEP PDU_ERROR_BAD_FORMAT\n");
       #endif
       // Go back pointer to avoid losing a real char
       (*buffer_ptr)--;
       return PDU_ERROR_BAD_FORMAT;
     }
-    else if (*buffer == '\n' &&  *pdu_candidate != '\r')
+    else if (*buffer == '\x02' &&  *pdu_candidate != '\x04')
     {
-      // Forbidden character sequence '\n' without preceeding '\r'
+      // Forbidden character sequence '\x02' without preceeding '\x04'
       // pdu_candidate_ptr must be taken care outside this function
       #ifdef DBG_RECEIVED_DATA
-         fprintf(stderr,"LF detected but no previous CR PDU_ERROR_BAD_FORMAT\n");
+         fprintf(stderr,"SEP detected but no previous MSEP PDU_ERROR_BAD_FORMAT\n");
       #endif
       return PDU_ERROR_BAD_FORMAT;
     }
-    else if (*buffer !='\r' && *buffer != '\n' && (*buffer < 32 || *buffer >126) ) // http://www.asciitable.com/
+    else if (*buffer !='\x02' && *buffer != '\x04' && (*buffer < 32 || *buffer >126) ) // http://www.asciitable.com/
     {
       // Forbidden characters
       // pdu_candidate_ptr must be taken care outside this function
