@@ -15,6 +15,7 @@
 void hexdump(void *mem, unsigned int len);
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y);
 void format_timestamp(struct timeval *tv, char *buffer, size_t buffer_size);
+void convert_timestamp(const char *timestamp, char *buffer, size_t buffer_size);
 
 int main(int argc, char *argv[])
 {
@@ -35,6 +36,11 @@ int main(int argc, char *argv[])
   char formatted_time[30];
   format_timestamp(&tv1, formatted_time, sizeof(formatted_time));
   printf("Formatted timestamp: %s\n", formatted_time);
+
+  /* Test the new timestamp conversion function */
+  char converted_time[30];
+  convert_timestamp("2023-09-16 02:20:06", converted_time, sizeof(converted_time));
+  printf("Converted timestamp: %s\n", converted_time);
 
   /* Particularidades de timeval_subtract */
 
@@ -135,6 +141,14 @@ void format_timestamp(struct timeval *tv, char *buffer, size_t buffer_size)
   tm_info = localtime(&seconds);
   strftime(buffer, buffer_size, "%Y-%m-%d %H:%M:%S", tm_info);
   snprintf(buffer + strlen(buffer), buffer_size - strlen(buffer), ".%06ld", tv->tv_usec);
+}
+
+// Function to convert timestamp to required format
+void convert_timestamp(const char *timestamp, char *buffer, size_t buffer_size)
+{
+  struct tm tm_info;
+  strptime(timestamp, "%Y-%m-%d %H:%M:%S", &tm_info);
+  strftime(buffer, buffer_size, "%b %d %H:%M:%S", &tm_info);
 }
 
 // http://grapsus.net/blog/post/Hexadecimal-dump-in-C

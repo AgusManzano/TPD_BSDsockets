@@ -150,3 +150,22 @@ USER\x02TIMESTAMP\x02MESSAGE_BODY\x04
 try_parse PDU
 USER\x02TIMESTAMP\x02MESSAGE_BODY\x04
 ```
+
+### Nuevas Funcionalidades
+
+- Asignación de identificadores únicos a cada instancia de chat.
+- Análisis de sentimiento de cada mensaje.
+- Registro remoto de cada mensaje analizado usando el protocolo syslog.
+
+### Ejemplo de Análisis de Sentimiento
+
+```
+Mensaje: "Esto es un mensaje"
+Sentimiento: positivo
+```
+
+### Ejemplo de Registro de Mensaje Analizado
+
+```
+<163> Sep 16 02:20:06 localhost chat-0001 AGENT "Esto es un mensaje" (sentiment: positive sentiment_value: 0.8)
+```

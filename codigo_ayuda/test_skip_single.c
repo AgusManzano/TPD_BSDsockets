@@ -4,6 +4,7 @@
 #include <string.h> /* needed for memset() */
 
 static char *skip_single(char **buf, const char *delimiters);
+void parse_pdu(const char *pdu, char *user, char *timestamp, char *message_body);
 
 int main(int argc, char *argv[])
 {
@@ -24,6 +25,11 @@ int main(int argc, char *argv[])
     printf("%d '%s'\n", i, skip_single( &pdu_candidate, "\x02\x04") );
     printf("pdu_candidate = '%s'\n", pdu_candidate);
   }
+
+  // Call the new parsing function
+  char user[41], timestamp[20], message_body[201];
+  parse_pdu(argv[1], user, timestamp, message_body);
+  printf("Parsed PDU:\nUser: %s\nTimestamp: %s\nMessage Body: %s\n", user, timestamp, message_body);
 
   return 0;
 }
@@ -53,3 +59,15 @@ static char *skip_single(char **buf, const char *delimiters)
   return begin_word;
 }
 
+// Function to parse the user, timestamp, and message body from the PDU
+void parse_pdu(const char *pdu, char *user, char *timestamp, char *message_body)
+{
+  char *pdu_copy = strdup(pdu);
+  char *pdu_ptr = pdu_copy;
+
+  strcpy(user, skip_single(&pdu_ptr, "\x02"));
+  strcpy(timestamp, skip_single(&pdu_ptr, "\x02"));
+  strcpy(message_body, skip_single(&pdu_ptr, "\x04"));
+
+  free(pdu_copy);
+}

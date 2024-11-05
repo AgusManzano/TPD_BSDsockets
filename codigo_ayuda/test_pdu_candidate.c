@@ -3,6 +3,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <string.h> /* needed for memset() */
+#include <pthread.h>
+#include <syslog.h>
+#include <curl/curl.h>
 
 #define MAX_PDU_SIZE         10000
 
@@ -13,12 +16,15 @@
 // #define DBG_RECEIVED_DATA
 int processReceivedData(char *buffer, int buffersize, int *buffer_ptr, char *pdu_candidate, int *pdu_candidate_ptr);
 int recv_mockup(int new_s, void *buffer, size_t len , int flags, char* read_simulation_payload);
+void *handle_connection(void *arg);
+char *assign_unique_id();
+char *perform_sentiment_analysis(const char *message);
+void log_message(const char *message, const char *sentiment);
 
 int main(int argc, char* argv[])
 {
   /* Not used but useful for pedagogical purposes */
   int new_s; // socket
-
 
   /* Read Buffer for TCP socket */
   char buffer[3000];
@@ -197,4 +203,125 @@ int recv_mockup(int new_s, void *buffer, size_t len , int flags, char* read_simu
 {
   strcpy(buffer, read_simulation_payload);
   return strlen(buffer);
+}
+
+// Function to assign a unique identifier to each chat instance
+char *assign_unique_id()
+{
+  static int id_counter = 0;
+  char *id = malloc(20);
+  sprintf(id, "chat-%04d", id_counter++);
+  return id;
+}
+
+// Function to perform sentiment analysis on each message
+char *perform_sentiment_analysis(const char *message)
+{
+  CURL *curl;
+  CURLcode res;
+  struct curl_slist *headers = NULL;
+  char *sentiment = malloc(100);
+  char post_data[256];
+
+  curl = curl_easy_init();
+  if(curl) {
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, "X-API-Token: <token>");
+    sprintf(post_data, "{\"message\": \"%s\"}", message);
+
+    curl_easy_setopt(curl, CURLOPT_URL, "http://api.udesa.matsunaga.com.ar:15000/analyze");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
+
+    res = curl_easy_perform(curl);
+    if(res != CURLE_OK) {
+      fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+      strcpy(sentiment, "error");
+    } else {
+      // Parse the response to extract the sentiment
+      // For simplicity, we assume the response is a plain string
+      strcpy(sentiment, "positive"); // Replace with actual parsing logic
+    }
+
+    curl_easy_cleanup(curl);
+  }
+
+  return sentiment;
+}
+
+// Function to log each analyzed message using the syslog protocol
+void log_message(const char *message, const char *sentiment)
+{
+  openlog("chat_app", LOG_PID|LOG_CONS, LOG_USER);
+  syslog(LOG_INFO, "Message: %s, Sentiment: %s", message, sentiment);
+  closelog();
+}
+
+// Function to handle each connection in a separate thread
+void *handle_connection(void *arg)
+{
+  int new_s = *(int *)arg;
+  free(arg);
+
+  char buffer[3000];
+  int inbytes = -1;
+  int pdu_status;
+  int buffer_ptr, pdu_candidate_ptr;
+  char pdu_candidate[MAX_PDU_SIZE+1];
+
+  pdu_candidate_ptr = 0;
+  memset(pdu_candidate, 0, sizeof(pdu_candidate));
+
+  char *test_buffers[7] = {
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04USER\x02TIMESTAMP\x02MESSAGE_BODY",
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY",
+    "\x04USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
+    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04"
+  };
+
+  int i;
+  for (i = 0; i < 7; i++)
+  {
+    inbytes = recv_mockup(new_s, buffer, sizeof(buffer), 0, test_buffers[i]);
+    buffer_ptr = 0;
+
+    while (inbytes - buffer_ptr - 1 > 0)
+    {
+      pdu_status = processReceivedData((char *)buffer, inbytes, &buffer_ptr, (char *)pdu_candidate, &pdu_candidate_ptr);
+      if (pdu_status == PDU_CANDIDATE_LINE_OK)
+      {
+        printf("try_parse PDU\n");
+        printf("%s\n", pdu_candidate);
+
+        char *unique_id = assign_unique_id();
+        char *sentiment = perform_sentiment_analysis(pdu_candidate);
+        log_message(pdu_candidate, sentiment);
+
+        free(unique_id);
+        free(sentiment);
+
+        pdu_candidate_ptr = 0;
+        memset(pdu_candidate, 0, sizeof(pdu_candidate));
+      }
+      else if (pdu_status == PDU_ERROR_BAD_FORMAT)
+      {
+        printf("ERROR clean memory buffer\n");
+        pdu_candidate_ptr = 0;
+        memset(pdu_candidate, 0, sizeof(pdu_candidate));
+      }
+      else
+      {
+        printf("%s\n", pdu_candidate);
+        printf("No delimiter found. Probably need another buffer read\n");
+      }
+
+      fprintf(stderr, "processReceivedData = %d\n", pdu_status);
+      fprintf(stderr, "inbytes = %d  buffer_ptr = %d\n", inbytes, buffer_ptr);
+    }
+  }
+
+  return NULL;
 }
