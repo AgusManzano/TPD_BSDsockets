@@ -13,13 +13,15 @@
 #define PDU_ERROR_BAD_FORMAT	-1
 #define PDU_NEED_MORE_DATA       0
 
+#define ARRAY_SIZE 4
+
 // #define DBG_RECEIVED_DATA
 int processReceivedData(char *buffer, int buffersize, int *buffer_ptr, char *pdu_candidate, int *pdu_candidate_ptr);
 int recv_mockup(int new_s, void *buffer, size_t len , int flags, char* read_simulation_payload);
-void *handle_connection(void *arg);
-char *assign_unique_id();
-char *perform_sentiment_analysis(const char *message);
-void log_message(const char *message, const char *sentiment);
+// void *handle_connection(void *arg);
+// char *assign_unique_id();
+// char *perform_sentiment_analysis(const char *message);
+// void log_message(const char *message, const char *sentiment);
 
 int main(int argc, char* argv[])
 {
@@ -42,53 +44,75 @@ int main(int argc, char* argv[])
   memset(pdu_candidate,0,sizeof(pdu_candidate));
 
   /* Buffer array for TCP read mockup */
-  char *test_buffers[7] = {
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04USER\x02TIMESTAMP\x02MESSAGE_BODY",
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY",
-    "\x04USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04"
+  char *test_buffers[ARRAY_SIZE] = {
+    "usuario1\x02timestamp1\x02mensaje1\x04",
+    "usuario2\x02timestamp2\x02mensaje2\x04usuario3\x02timestamp3\x02mensaje3\x04",
+    "usuario4\x02timestamp4\x02mensaje4\x04usuario5\x02timestamp5\x02mensaje5\x04usuario6\x02timestamp6\x02mensaje6\x04",
+    "usuario7\x02timestamp7\x02mensaje7_incomplete"
   };
 
   /*  This for() emulates the reading loop */
   int i;
-  for (i=0; i < 7; i++)
+  for (i=0; i < ARRAY_SIZE; i++)
   {
     // Read mockup of a TCP socket new_s
-    inbytes = recv_mockup(new_s, buffer, sizeof(buffer),0, test_buffers[i]);
+    inbytes = recv_mockup(new_s, buffer, sizeof(buffer),0, test_buffers[i]);  //---> Aca sería donde se lee del socket (recv es de receive)
+    printf("Read %s\n", buffer); // Just for debug, erase it if convenient
     buffer_ptr = 0; // after reading, buffer pointer is reseted to 0
 
+    // String para guardar los campos de la PDU
+    char PDU_data[1000];
     // This loop processes data and its existence provides
     // - complete and partial PDU parsing
-    while (inbytes - buffer_ptr -1  > 0)
+    while (inbytes - buffer_ptr -1  > 0) // la cantidad de bytes que se leyeron menos la cantidad de bytes que ya se procesaron
     {
-      pdu_status = processReceivedData((char *) buffer, inbytes, &buffer_ptr, (char *) pdu_candidate, &pdu_candidate_ptr);
-      if (pdu_status == PDU_CANDIDATE_LINE_OK)
+      // Mostramos lo que recibe la función processReceivedData
+      // printf("buffer: %s\n", buffer);
+      // printf("buffersize: %d\n", sizeof(buffer));
+      // printf("len: %d\n", inbytes);
+      // printf("inbytes: %d\n", inbytes);
+      // printf("buffer_ptr: %d\n", buffer_ptr);
+      // printf("pdu_candidate: %s\n", pdu_candidate);
+      // printf("pdu_candidate_ptr: %d\n", pdu_candidate_ptr);
+
+      pdu_status = processReceivedData((char *) buffer, inbytes, &buffer_ptr, (char *) pdu_candidate, &pdu_candidate_ptr);  // ---> Aca ve si hay un PDU completo, detecta los delimitadores y corta el buffer
+      if (pdu_status == PDU_CANDIDATE_LINE_OK)  // ---> Aca se fija si el PDU es correcto
       {
         // Here we should try to parse the candidate PDU
         printf( "try_parse PDU\n");    // Just for debug, erase it if convenient
         printf("%s\n", pdu_candidate); // Just for debug, erase it if convenient
-        // try_parse((char *) pdu_candidate, pdu_candidate_ptr,  &new_s);
+        
+        // Parse PDU with ' ' as delimiter
+        char *usuario = strtok(pdu_candidate, " ");
+        char *timestamp = strtok(NULL, " ");
+        char *mensaje = strtok(NULL, " ");
+
+        // printf("Usuario: %s\n", usuario);
+        // printf("Timestamp: %s\n", timestamp);
+        // printf("Mensaje: %s\n", mensaje);
+        // Guardar los campos de la PDU en un string
+        sprintf(PDU_data, "Usuario: %s, Timestamp: %s, Mensaje: %s", usuario, timestamp, mensaje);
+        printf("PDU_data: %s\n", PDU_data);
+        
         // Memory cleaning
         pdu_candidate_ptr = 0;
         memset(pdu_candidate,0,sizeof(pdu_candidate));
       }
-      else if (pdu_status == PDU_ERROR_BAD_FORMAT)
+      else if (pdu_status == PDU_ERROR_BAD_FORMAT) // ---> caso en el que el PDU no es correcto
       {
         printf("ERROR clean memory buffer\n"); // Just for debug, erase it if convenient
         // Memory cleaning
-        pdu_candidate_ptr = 0;
+        pdu_candidate_ptr = 0; 
         memset(pdu_candidate,0,sizeof(pdu_candidate));
       }
-      else
+      else // ---> caso en el que no se detecta un delimitador, posiblemente porque el mensaje sigue en otro buffer
       {
         // Just for debug, erase it if convenient
         printf("%s\n", pdu_candidate);
         printf("No delimiter found. Probably need another buffer read\n");
       }
       // Just for debug, erase it if convenient
+      printf("\n");
       fprintf(stderr,"processReceivedData = %d\n", pdu_status);
       fprintf(stderr,"inbytes=%d  buffer_ptr=%d\n", inbytes, buffer_ptr);
     }
@@ -102,7 +126,7 @@ int main(int argc, char* argv[])
  * which will be tested for correcteness later on
  * This function was meant to delimit pipelined PDU (i.e. multiple PDU in one TCP segment/buffer)
  *
- * buffer: buffer which stores last read from socket
+ * buffer: buffer which stores last read from socket // -> en nuestro ejemplo de 7 líneas, cada línea se cargaría en el buffer
  * buffersize: how many bytes (char) buffer holds
  * buffer_ptr: offset position at which it will read buffer "buffer"
  * pdu_candidate: buffer which stores byte hoping to have enough information to
@@ -110,7 +134,7 @@ int main(int argc, char* argv[])
  * pdu_candidate_ptr: offset position at which it will read buffer "pdu_candidate"
  */
 int processReceivedData(char *buffer, int buffersize, int *buffer_ptr, char *pdu_candidate, int *pdu_candidate_ptr)
-{
+{ 
   // Position pdu_candidate pointer
   pdu_candidate += *pdu_candidate_ptr;
   // Position buffer pointer
@@ -134,40 +158,16 @@ int processReceivedData(char *buffer, int buffersize, int *buffer_ptr, char *pdu
       fprintf(stderr,"buffer_ptr '%d'  pdu_candidate_ptr '%d'\n", *buffer_ptr, *pdu_candidate_ptr);
     #endif
 
-    // if ( *pdu_candidate_ptr >= 3 )
-    //   printf("  %d-%d-%d-%d\n", *(pdu_candidate-2), *(pdu_candidate-1), *(pdu_candidate), *buffer );
-
     // PDU candidate criteria: \x04 (MSEP)
-    if ( *pdu_candidate_ptr >= 1 && // We needed at least 1 char to test \x04 condition
-         ( *(pdu_candidate) == '\x04' ) )
+    if ( *pdu_candidate_ptr >= 1 && *buffer == 0x04)
     {
       pdu_candidate++; // Advance pointer for next PDU (in 2016 was not a requirement)
-      *pdu_candidate++ = *buffer;
+      *pdu_candidate++ = ' '; // Replace delimiter with space
       (*pdu_candidate_ptr)++;
       #ifdef DBG_RECEIVED_DATA
          fprintf(stderr,"MSEP detected PDU_CANDIDATE_LINE_OK\n");
       #endif
       return PDU_CANDIDATE_LINE_OK;
-    }
-    else if (*buffer != '\x02' &&  *pdu_candidate == '\x04')
-    {
-      // Forbidden character sequence '\x04' and not followed by '\x02'
-      // pdu_candidate_ptr must be taken care outside this function
-      #ifdef DBG_RECEIVED_DATA
-         fprintf(stderr,"MSEP used alone without SEP PDU_ERROR_BAD_FORMAT\n");
-      #endif
-      // Go back pointer to avoid losing a real char
-      (*buffer_ptr)--;
-      return PDU_ERROR_BAD_FORMAT;
-    }
-    else if (*buffer == '\x02' &&  *pdu_candidate != '\x04')
-    {
-      // Forbidden character sequence '\x02' without preceeding '\x04'
-      // pdu_candidate_ptr must be taken care outside this function
-      #ifdef DBG_RECEIVED_DATA
-         fprintf(stderr,"SEP detected but no previous MSEP PDU_ERROR_BAD_FORMAT\n");
-      #endif
-      return PDU_ERROR_BAD_FORMAT;
     }
     else if (*buffer !='\x02' && *buffer != '\x04' && (*buffer < 32 || *buffer >126) ) // http://www.asciitable.com/
     {
@@ -186,14 +186,19 @@ int processReceivedData(char *buffer, int buffersize, int *buffer_ptr, char *pdu
       else
         fprintf(stderr,"Char (%d) processed OK\n", *buffer);
       #endif
-      if (*pdu_candidate != '\0') { pdu_candidate++; }
-      *pdu_candidate = *buffer;
+      if (*buffer == '\x02' || *buffer == '\x04') {
+        *pdu_candidate = ' '; // Replace delimiter with space
+      } else {
+        *pdu_candidate = *buffer;
+      }
       (*pdu_candidate_ptr)++;
+      pdu_candidate++;
     }
     buffer++;
   }
   return PDU_NEED_MORE_DATA;
 }
+
 
 /*
  * This function emulates for pedagocial purposes recv() system call
@@ -205,123 +210,3 @@ int recv_mockup(int new_s, void *buffer, size_t len , int flags, char* read_simu
   return strlen(buffer);
 }
 
-// Function to assign a unique identifier to each chat instance
-char *assign_unique_id()
-{
-  static int id_counter = 0;
-  char *id = malloc(20);
-  sprintf(id, "chat-%04d", id_counter++);
-  return id;
-}
-
-// Function to perform sentiment analysis on each message
-char *perform_sentiment_analysis(const char *message)
-{
-  CURL *curl;
-  CURLcode res;
-  struct curl_slist *headers = NULL;
-  char *sentiment = malloc(100);
-  char post_data[256];
-
-  curl = curl_easy_init();
-  if(curl) {
-    headers = curl_slist_append(headers, "Content-Type: application/json");
-    headers = curl_slist_append(headers, "X-API-Token: <token>");
-    sprintf(post_data, "{\"message\": \"%s\"}", message);
-
-    curl_easy_setopt(curl, CURLOPT_URL, "http://api.udesa.matsunaga.com.ar:15000/analyze");
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
-
-    res = curl_easy_perform(curl);
-    if(res != CURLE_OK) {
-      fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-      strcpy(sentiment, "error");
-    } else {
-      // Parse the response to extract the sentiment
-      // For simplicity, we assume the response is a plain string
-      strcpy(sentiment, "positive"); // Replace with actual parsing logic
-    }
-
-    curl_easy_cleanup(curl);
-  }
-
-  return sentiment;
-}
-
-// Function to log each analyzed message using the syslog protocol
-void log_message(const char *message, const char *sentiment)
-{
-  openlog("chat_app", LOG_PID|LOG_CONS, LOG_USER);
-  syslog(LOG_INFO, "Message: %s, Sentiment: %s", message, sentiment);
-  closelog();
-}
-
-// Function to handle each connection in a separate thread
-void *handle_connection(void *arg)
-{
-  int new_s = *(int *)arg;
-  free(arg);
-
-  char buffer[3000];
-  int inbytes = -1;
-  int pdu_status;
-  int buffer_ptr, pdu_candidate_ptr;
-  char pdu_candidate[MAX_PDU_SIZE+1];
-
-  pdu_candidate_ptr = 0;
-  memset(pdu_candidate, 0, sizeof(pdu_candidate));
-
-  char *test_buffers[7] = {
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04USER\x02TIMESTAMP\x02MESSAGE_BODY",
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY",
-    "\x04USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04",
-    "USER\x02TIMESTAMP\x02MESSAGE_BODY\x04"
-  };
-
-  int i;
-  for (i = 0; i < 7; i++)
-  {
-    inbytes = recv_mockup(new_s, buffer, sizeof(buffer), 0, test_buffers[i]);
-    buffer_ptr = 0;
-
-    while (inbytes - buffer_ptr - 1 > 0)
-    {
-      pdu_status = processReceivedData((char *)buffer, inbytes, &buffer_ptr, (char *)pdu_candidate, &pdu_candidate_ptr);
-      if (pdu_status == PDU_CANDIDATE_LINE_OK)
-      {
-        printf("try_parse PDU\n");
-        printf("%s\n", pdu_candidate);
-
-        char *unique_id = assign_unique_id();
-        char *sentiment = perform_sentiment_analysis(pdu_candidate);
-        log_message(pdu_candidate, sentiment);
-
-        free(unique_id);
-        free(sentiment);
-
-        pdu_candidate_ptr = 0;
-        memset(pdu_candidate, 0, sizeof(pdu_candidate));
-      }
-      else if (pdu_status == PDU_ERROR_BAD_FORMAT)
-      {
-        printf("ERROR clean memory buffer\n");
-        pdu_candidate_ptr = 0;
-        memset(pdu_candidate, 0, sizeof(pdu_candidate));
-      }
-      else
-      {
-        printf("%s\n", pdu_candidate);
-        printf("No delimiter found. Probably need another buffer read\n");
-      }
-
-      fprintf(stderr, "processReceivedData = %d\n", pdu_status);
-      fprintf(stderr, "inbytes = %d  buffer_ptr = %d\n", inbytes, buffer_ptr);
-    }
-  }
-
-  return NULL;
-}
